@@ -2,6 +2,7 @@ import random
 from collections import namedtuple, deque
 from enum import Enum
 
+import numpy as np
 import pygame
 
 pygame.init()
@@ -98,11 +99,16 @@ class RobotGame:
         self.display = pygame.display.set_mode((self.w, self.h))
         pygame.display.set_caption("Robot Game 5x5")
         self.clock = pygame.time.Clock()
+        self.reset()
 
+
+    def reset(self):
         self.direction = Direction.RIGHT
 
         # --- generate grid with constraints: distance >= 4 and path exists ---
         self.grid = None
+        self.goal = None
+        start_row = start_col = end_row = end_col = None
         for _ in range(10_000):
             grid = get_random_fields(ROWS, COLS, field_counts)
             s = find_first(grid, "Start")
@@ -115,70 +121,87 @@ class RobotGame:
             # valid grid!
             self.grid = grid
             start_row, start_col = s
+            end_row, end_col = e
             break
+        if self.grid is None:
+            raise RuntimeError("Failed to generate a valid grid after 10,000 tries.")
 
+        self.goal = Point(
+            end_col * BLOCK_SIZE + BLOCK_SIZE // 2,
+            end_row * BLOCK_SIZE + BLOCK_SIZE // 2
+        )
         self.robot = Point(
             start_col * BLOCK_SIZE + BLOCK_SIZE // 2,
             start_row * BLOCK_SIZE + BLOCK_SIZE // 2
         )
 
-
-    def reset(self):
-        pass
-
-    def is_collision(self):
+    def is_collision(self, pt = None):
+        if pt is None:
+            pt = self.robot
         # hits boundary
-        if self.robot.x > self.w or self.robot.x < 0 or self.robot.y > self.h  or self.robot.y < 0:
+        if pt.x > self.w or pt.x < 0 or pt.y > self.h  or pt.y < 0:
             return True
         # goes in hole
-        if self.grid[self.robot.y // BLOCK_SIZE][self.robot.x // BLOCK_SIZE] == "Hole":
+        if self.grid[pt.y // BLOCK_SIZE][pt.x // BLOCK_SIZE] == "Hole":
             return True
         return False
 
-    def is_game_won(self):
-        if self.grid[self.robot.y // BLOCK_SIZE][self.robot.x // BLOCK_SIZE] == "End":
-            return True
-        return False
+    def _move(self, action):
+        # [straight, right, left]
 
-    def _move(self, direction):
-        x, y = self.robot
-        if direction == Direction.RIGHT:
+        clock_wise = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
+        idx = clock_wise.index(self.direction)
+
+        if np.array_equal(action, [1,0,0]):
+            new_dir = clock_wise[idx] # no change
+        elif np.array_equal(action, [0,1,0]):
+            next_idx = (idx + 1) % 4
+            new_dir = clock_wise[next_idx] # right turn r -> d -> l -> u
+        else: # [0,0,1]
+            next_idx = (idx -1) % 4
+            new_dir = clock_wise[next_idx]  # left turn r -> u -> l -> d
+
+        self.direction = new_dir
+        x = self.robot.x
+        y = self.robot.y
+        if self.direction == Direction.RIGHT:
             x += BLOCK_SIZE
-        elif direction == Direction.LEFT:
+        elif self.direction == Direction.LEFT:
             x -= BLOCK_SIZE
-        elif direction == Direction.UP:
+        elif self.direction == Direction.UP:
             y -= BLOCK_SIZE
-        elif direction == Direction.DOWN:
+        elif self.direction == Direction.DOWN:
             y += BLOCK_SIZE
 
         self.robot = Point(x, y)
 
-    def play_step(self):
+    def play_step(self, action):
         # 1. collect user input
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    self._move(Direction.LEFT)
-                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    self._move(Direction.RIGHT)
-                elif event.key == pygame.K_UP or event.key == pygame.K_w:
-                    self._move(Direction.UP)
-                elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    self._move(Direction.DOWN)
+
+        self._move(action)
 
         # 2. check if game over
+        reward = 0
         game_over = False
-        if self.is_collision() or self.is_game_won():
+        if self.is_collision():
             game_over = True
-            return game_over
+            reward = -10
+            return game_over, reward
+
+        if self.robot == self.goal:
+            game_over = True
+            reward = 10
+            return game_over, reward
+
         # 3.self. update ui
         self._update_ui()
-        self.clock.tick(30)
+        self.clock.tick(10)
         # 4. return game over
-        return game_over
+        return game_over, reward
 
     def _update_ui(self):
         self.display.fill(BLACK)
@@ -192,12 +215,8 @@ class RobotGame:
         pygame.draw.circle(self.display, (255, 255, 255), (cx, cy), BLOCK_SIZE // 3, 2)
         pygame.display.flip()
 
-if __name__ == "__main__":
-    game = RobotGame()
-    while True:
-        game_over = game.play_step()
-        if game_over == True:
-            break
-
-    pygame.quit()
-
+    def get_frame(self):
+        surface =pygame.display.get_surface()
+        arr = pygame.surfarray.array3d(surface) # (W,H,3)
+        img =np.transpose(arr,(1,0,2))  # (H,W,3)
+        return img
