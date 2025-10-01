@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 
-from matplotlib.animation import writers
+
 
 
 class Linear_QNet(nn.Module):
@@ -28,13 +28,13 @@ class Linear_QNet(nn.Module):
 
 
 class QTrainer:
-    def __init__(self, model, lr, gamma, writer = None):
+    def __init__(self, model, lr, gamma, tb_writer = None):
         self.lr = lr
         self.gamma = gamma
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
         self.criterion = nn.MSELoss()
-        self.writer = writer
+        self.tb_writer = tb_writer
         self.train_steps = 0
 
 
@@ -68,13 +68,13 @@ class QTrainer:
         loss = self.criterion(target, pred)
         loss.backward()
 
-        if self.writer is not None:
+        if self.tb_writer is not None:
             for name, param in self.model.named_parameters():
                 # Parameter
-                self.writer.add_histogram(f"params/{name}", param.detach().cpu().numpy(), self.train_steps)
+                self.tb_writer.add_histogram(f"params/{name}", param.detach().cpu().numpy(), self.train_steps)
                 # Gradients only if available
                 if param.grad is not None:
-                    self.writer.add_histogram(f"gradients/{name}", param.grad.detach().cpu().numpy(), self.train_steps)
+                    self.tb_writer.add_histogram(f"gradients/{name}", param.grad.detach().cpu().numpy(), self.train_steps)
 
         self.optimizer.step()
         self.train_steps += 1

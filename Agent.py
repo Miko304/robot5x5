@@ -1,22 +1,33 @@
+import os
+
 import torch
 import random
 import numpy as np
 from collections import deque
+
+from matplotlib.animation import writers
+
 from game import RobotGame, Direction, Point
 from model import Linear_QNet, QTrainer
+
+from torch.utils.tensorboard import SummaryWriter
+import time
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
 LR = 0.001
+IMAGE_EVERY_N_EPISODES = 10 # every 10 episodes screenshot of board
 
 class Agent:
-    def __init__(self):
+    def __init__(self, tb_writer = None):
         self.n_games = 0
         self.epsilon = 0
         self.gamma = 0.9
         self.memory = deque(maxlen=MAX_MEMORY)
         self.model = Linear_QNet(11,256,3)
         self.trainer = QTrainer(self.model, lr = LR, gamma = self.gamma)
+        self.tb_writer = tb_writer
+        self.last_100_rewards = deque(maxlen=100)
 
     def get_state(self, game):
         robot = game.robot
@@ -74,10 +85,14 @@ class Agent:
         else:
             mini_sample = self.memory
         states, actions, rewards, next_states, dones = zip(*mini_sample)
-        self.trainer.train_step(states, actions, rewards, next_states, dones)
+        loss = self.trainer.train_step(states, actions, rewards, next_states, dones)
+        if self.tb_writer is not None:
+            self.tb_writer.add_scalar("loss/td", loss, self.trainer.train_steps)
 
     def train_short_memory(self, state, action, reward, next_state, done):
-        self.trainer.train_step(state, action, reward, next_state, done)
+        loss = self.trainer.train_step(state, action, reward, next_state, done)
+        if self.tb_writer is not None:
+            self.tb_writer.add_scalar("loss/td", loss, self.trainer.train_steps)
 
     def get_action(self, state):
         self.epsilon = 80 - self.n_games
@@ -91,11 +106,29 @@ class Agent:
             move = torch.argmax(prediction).item()
             final_move[move] = 1
 
+        if self.tb_writer is not None:
+            self.tb_writer.add_scalar("hp/epsilon", max(self.epsilon, 0), self.n_games)
         return final_move
 
 def train():
+    # init Writer
+    run_name = time.strftime("%Y%m%d-%H%M%S")
+    tb_writer = SummaryWriter(log_dir=os.path.join("runs_robot5x5", run_name))
+
+    # Run-Notes
+    tb_writer.add_text("run/notes", "seed=42 | env=Robot5x5-v1 | commit=<your_commit_hash>", 0)
+    tb_writer.add_text("run/meta", f"device={'cuda' if torch.cuda.is_available() else 'cpu'}", 0)
+    tb_writer.add_scalar("hp/learning_rate", LR, 0)
+
     agent = Agent()
     game = RobotGame()
+
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+
+    episode_reward = 0
+    episode_steps = 0
 
     while True:
         # get old state
@@ -106,6 +139,9 @@ def train():
 
         # perform move and get new state
         done, reward  = game.play_step(final_move)
+        episode_reward += reward
+        episode_steps += 1
+
         state_new = agent.get_state(game)
 
         # train short memory
@@ -115,10 +151,34 @@ def train():
         agent.remember(state_old, final_move, reward, state_new, done)
 
         if done:
+            # success: reward >0 (goal reached) otherwise = 0
+            success = 1.0 if reward > 0 else 0.0
+
             # train long memory
             game.reset()
             agent.n_games += 1
             agent.train_long_memory()
+
+            # Scalars per Episode
+            agent.last_100_rewards.append(episode_reward)
+            ma100 = np.mean(agent.last_100_rewards)
+
+            tb_writer.add_scalar("train/mean_reward", episode_reward, agent.n_games)
+            tb_writer.add_scalar("train/episode_length", episode_steps, agent.n_games)
+            tb_writer.add_scalar("train/success_rate", success, agent.n_games)  # raw success (0/1)
+            tb_writer.add_scalar("train/success_rate_ma100", ma100,
+                              agent.n_games)  # MA100 über Reward; alternativ separaten success-MA führen
+
+            # Screenshot of Map every N Episodes
+            if agent.n_games % IMAGE_EVERY_N_EPISODES == 0:
+                frame = game.get_frame()  # HxWx3, uint8
+                # TensorBoard awaits CHW (C,H,W)
+                img_chw = np.transpose(frame, (2, 0, 1))
+                tb_writer.add_image("env/frame", img_chw, agent.n_games)
+
+            # reset Episode Stats
+            episode_reward = 0
+            episode_steps = 0
 
 
 
