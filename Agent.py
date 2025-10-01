@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from game import RobotGame, Direction
+from game import RobotGame, Direction, Point
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -17,8 +17,11 @@ class Agent():
         # TODO: Model and Trainer
 
     def get_state(self, game):
-        robot = (game.robot_row , game.robot_col)
-        point_l = robot(+100, -100)
+        robot = game.robot
+        point_l = Point(robot.x - 100, robot.y)
+        point_r = Point(robot.x + 100, robot.y)
+        point_u = Point(robot.x, robot.y - 100)
+        point_d = Point(robot.x, robot.y + 100)
 
 
         dir_l = game.direction == Direction.LEFT
@@ -28,5 +31,89 @@ class Agent():
 
         state = [
             # Danger straight
+            (dir_r and game.is_collision(point_r)) or
+            (dir_l and game.is_collision(point_l)) or
+            (dir_u and game.is_collision(point_u)) or
+            (dir_d and game.is_collision(point_d)),
 
+            # Danger right
+            (dir_u and game.is_collision(point_r)) or
+            (dir_d and game.is_collision(point_l)) or
+            (dir_l and game.is_collision(point_u)) or
+            (dir_r and game.is_collision(point_d)),
+
+            # Danger left
+            (dir_d and game.is_collision(point_r)) or
+            (dir_u and game.is_collision(point_l)) or
+            (dir_r and game.is_collision(point_u)) or
+            (dir_l and game.is_collision(point_d)),
+
+            # Move direction
+            dir_l,
+            dir_r,
+            dir_u,
+            dir_d,
+
+            # End location
+            game.goal.x < game.robot.x, # goal left
+            game.goal.x > game.robot.x, # goal right
+            game.goal.y < game.head.y, # goal up
+            game.goal.y > game.head.y, # goal down
         ]
+
+        return np.array(state, dtype = int)
+
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+
+    def train_long_memory(self):
+        pass
+
+    def train_short_memory(self, state, action, reward, next_state, done):
+        pass
+
+    def get_action(self, state):
+        self.epsilon = 80 - self.n_games
+        final_move = [0,0,0]
+        if random.randint(0, 200) < self.epsilon:
+            move = random.randint(0, 2)
+            final_move[move] = 1
+        else:
+            state0 = torch.tensor(state, dtype = torch.float)
+            prediction = self.model(state0)
+            move = torch.argmax(prediction).item()
+            final_move[move] = 1
+
+        return final_move
+
+def train():
+    agent = Agent()
+    game = RobotGame()
+
+    while True:
+        # get old state
+        state_old = agent.get_state(game)
+
+        # get move
+        final_move = agent.get_action(state_old)
+
+        # perform move and get new state
+        reward, done = game.play_step(final_move)
+        state_new = agent.get_state(game)
+
+        # train short memory
+        # TODO
+
+        # remember
+        agent.remember(state_old, final_move, reward, state_new, done)
+
+        if done:
+            # train long memory
+            game.reset()
+            agent.n_games += 1
+            agent.train_long_memory()
+
+
+
+if __name__ == '__main__':
+    train()
