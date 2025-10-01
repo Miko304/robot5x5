@@ -28,6 +28,8 @@ class Agent:
         self.trainer = QTrainer(self.model, lr = LR, gamma = self.gamma)
         self.tb_writer = tb_writer
         self.last_100_rewards = deque(maxlen=100)
+        self.last_100_success = deque(maxlen=100)
+        self.action_counts = np.zeros(3, dtype=np.int64)  # [straight, right, left]
 
     def get_state(self, game):
         robot = game.robot
@@ -108,6 +110,10 @@ class Agent:
 
         if self.tb_writer is not None:
             self.tb_writer.add_scalar("hp/epsilon", max(self.epsilon, 0), self.n_games)
+
+        # track which one-hot we chose
+        self.action_counts[np.argmax(final_move)] += 1
+
         return final_move
 
 def train():
@@ -162,12 +168,21 @@ def train():
             # Scalars per Episode
             agent.last_100_rewards.append(episode_reward)
             ma100 = np.mean(agent.last_100_rewards)
+            agent.last_100_success.append(success)
+            sr_ma100 = np.mean(agent.last_100_success) if agent.last_100_success else 0.0
 
+            tb_writer.add_scalar("train/success_rate", success, agent.n_games)  # 0/1
+            tb_writer.add_scalar("train/success_rate_ma100", sr_ma100, agent.n_games)  # 0..1
             tb_writer.add_scalar("train/mean_reward", episode_reward, agent.n_games)
             tb_writer.add_scalar("train/episode_length", episode_steps, agent.n_games)
             tb_writer.add_scalar("train/success_rate", success, agent.n_games)  # raw success (0/1)
             tb_writer.add_scalar("train/success_rate_ma100", ma100,
                               agent.n_games)  # MA100 über Reward; alternativ separaten success-MA führen
+            # Log action histogram for the episode
+            tb_writer.add_scalar("actions/straight", int(agent.action_counts[0]), agent.n_games)
+            tb_writer.add_scalar("actions/right", int(agent.action_counts[1]), agent.n_games)
+            tb_writer.add_scalar("actions/left", int(agent.action_counts[2]), agent.n_games)
+            agent.action_counts[:] = 0  # reset for next episode
 
             # Screenshot of Map every N Episodes
             if agent.n_games % IMAGE_EVERY_N_EPISODES == 0:
