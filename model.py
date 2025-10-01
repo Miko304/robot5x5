@@ -4,6 +4,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 
+from matplotlib.animation import writers
+
 
 class Linear_QNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -26,12 +28,15 @@ class Linear_QNet(nn.Module):
 
 
 class QTrainer:
-    def __init__(self, model, lr, gamma):
+    def __init__(self, model, lr, gamma, writer = None):
         self.lr = lr
         self.gamma = gamma
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
         self.criterion = nn.MSELoss()
+        self.writer = writer
+        self.train_steps = 0
+
 
     def train_step(self, state, action, reward, next_state, done):
         state = torch.tensor(state, dtype=torch.float)
@@ -50,20 +55,29 @@ class QTrainer:
 
         # 1: predicted Q values with current state
         pred = self.model(state)
-
         target = pred.clone()
+
         for idx in range(len(done)):
             Q_new = reward[idx]
             if not done[idx]:
                 Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
-
             target[idx][torch.argmax(action[idx]).item()] = Q_new
 
         # 2: Q_new = r + y * max(next_predicted Q value) -> only do this if not done
-        # pred.clone()
-        # preds[argmax(action)] = Q_new
         self.optimizer.zero_grad()
         loss = self.criterion(target, pred)
         loss.backward()
 
+        if self.writer is not None:
+            for name, param in self.model.named_parameters():
+                # Parameter
+                self.writer.add_histogram(f"params/{name}", param.detach().cpu().numpy(), self.train_steps)
+                # Gradients only if available
+                if param.grad is not None:
+                    self.writer.add_histogram(f"gradients/{name}", param.grad.detach().cpu().numpy(), self.train_steps)
+
         self.optimizer.step()
+        self.train_steps += 1
+
+        # return for Scalars in Agent
+        return float(loss.item())

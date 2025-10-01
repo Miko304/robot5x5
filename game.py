@@ -215,3 +215,8 @@ class RobotGame:
         pygame.draw.circle(self.display, (255, 255, 255), (cx, cy), BLOCK_SIZE // 3, 2)
         pygame.display.flip()
 
+    def get_frame(self):
+        surface =pygame.display.get_surface()
+        arr = pygame.surfarray.array3d(surface) # (W,H,3)
+        img =np.transpose(arr,(1,0,2))  # (H,W,3)
+        return img
