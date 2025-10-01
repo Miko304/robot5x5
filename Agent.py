@@ -9,7 +9,7 @@ MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
 LR = 0.001
 
-class Agent():
+class Agent:
     def __init__(self):
         self.n_games = 0
         self.epsilon = 0
@@ -19,7 +19,7 @@ class Agent():
         self.trainer = QTrainer(self.model, lr = LR, gamma = self.gamma)
 
     def get_state(self, game):
-        robot = game.robot[0]
+        robot = game.robot
         point_l = Point(robot.x - 100, robot.y)
         point_r = Point(robot.x + 100, robot.y)
         point_u = Point(robot.x, robot.y - 100)
@@ -59,8 +59,8 @@ class Agent():
             # End location
             game.goal.x < game.robot.x, # goal left
             game.goal.x > game.robot.x, # goal right
-            game.goal.y < game.head.y, # goal up
-            game.goal.y > game.head.y, # goal down
+            game.goal.y < game.robot.y, # goal up
+            game.goal.y > game.robot.y, # goal down
         ]
 
         return np.array(state, dtype = int)
@@ -99,14 +99,14 @@ def train():
 
     while True:
         # get old state
-        state_old = agent.get_state(game.robot)
+        state_old = agent.get_state(game)
 
         # get move
         final_move = agent.get_action(state_old)
 
         # perform move and get new state
-        reward, done = game.play_step(final_move)
-        state_new = agent.get_state(game.robot)
+        done, reward  = game.play_step(final_move)
+        state_new = agent.get_state(game)
 
         # train short memory
         agent.train_short_memory(state_old, final_move, reward, state_new, done)

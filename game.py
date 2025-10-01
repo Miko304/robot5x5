@@ -108,6 +108,7 @@ class RobotGame:
         # --- generate grid with constraints: distance >= 4 and path exists ---
         self.grid = None
         self.goal = None
+        start_row = start_col = end_row = end_col = None
         for _ in range(10_000):
             grid = get_random_fields(ROWS, COLS, field_counts)
             s = find_first(grid, "Start")
@@ -120,19 +121,28 @@ class RobotGame:
             # valid grid!
             self.grid = grid
             start_row, start_col = s
+            end_row, end_col = e
             break
-        self.goal = s
+        if self.grid is None:
+            raise RuntimeError("Failed to generate a valid grid after 10,000 tries.")
+
+        self.goal = Point(
+            end_col * BLOCK_SIZE + BLOCK_SIZE // 2,
+            end_row * BLOCK_SIZE + BLOCK_SIZE // 2
+        )
         self.robot = Point(
             start_col * BLOCK_SIZE + BLOCK_SIZE // 2,
             start_row * BLOCK_SIZE + BLOCK_SIZE // 2
         )
 
-    def is_collision(self):
+    def is_collision(self, pt = None):
+        if pt is None:
+            pt = self.robot
         # hits boundary
-        if self.robot.x > self.w or self.robot.x < 0 or self.robot.y > self.h  or self.robot.y < 0:
+        if pt.x > self.w or pt.x < 0 or pt.y > self.h  or pt.y < 0:
             return True
         # goes in hole
-        if self.grid[self.robot.y // BLOCK_SIZE][self.robot.x // BLOCK_SIZE] == "Hole":
+        if self.grid[pt.y // BLOCK_SIZE][pt.x // BLOCK_SIZE] == "Hole":
             return True
         return False
 
@@ -189,7 +199,7 @@ class RobotGame:
 
         # 3.self. update ui
         self._update_ui()
-        self.clock.tick(30)
+        self.clock.tick(10)
         # 4. return game over
         return game_over, reward
 
