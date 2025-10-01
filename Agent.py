@@ -3,6 +3,7 @@ import random
 import numpy as np
 from collections import deque
 from game import RobotGame, Direction, Point
+from model import Linear_QNet, QTrainer
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -14,10 +15,11 @@ class Agent():
         self.epsilon = 0
         self.gamma = 0.9
         self.memory = deque(maxlen=MAX_MEMORY)
-        # TODO: Model and Trainer
+        self.model = Linear_QNet(11,256,3)
+        self.trainer = QTrainer(self.model, lr = LR, gamma = self.gamma)
 
     def get_state(self, game):
-        robot = game.robot
+        robot = game.robot[0]
         point_l = Point(robot.x - 100, robot.y)
         point_r = Point(robot.x + 100, robot.y)
         point_u = Point(robot.x, robot.y - 100)
@@ -67,10 +69,15 @@ class Agent():
         self.memory.append((state, action, reward, next_state, done))
 
     def train_long_memory(self):
-        pass
+        if len(self.memory) > BATCH_SIZE:
+            mini_sample = random.sample(self.memory, BATCH_SIZE)
+        else:
+            mini_sample = self.memory
+        states, actions, rewards, next_states, dones = zip(*mini_sample)
+        self.trainer.train_step(states, actions, rewards, next_states, dones)
 
     def train_short_memory(self, state, action, reward, next_state, done):
-        pass
+        self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
         self.epsilon = 80 - self.n_games
@@ -92,17 +99,17 @@ def train():
 
     while True:
         # get old state
-        state_old = agent.get_state(game)
+        state_old = agent.get_state(game.robot)
 
         # get move
         final_move = agent.get_action(state_old)
 
         # perform move and get new state
         reward, done = game.play_step(final_move)
-        state_new = agent.get_state(game)
+        state_new = agent.get_state(game.robot)
 
         # train short memory
-        # TODO
+        agent.train_short_memory(state_old, final_move, reward, state_new, done)
 
         # remember
         agent.remember(state_old, final_move, reward, state_new, done)

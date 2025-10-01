@@ -165,12 +165,14 @@ class RobotGame:
 
         self.robot = Point(x, y)
 
-    def play_step(self):
+    def play_step(self, action):
         # 1. collect user input
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
+
+        self._move(action)
 
         # 2. check if game over
         reward = 0
