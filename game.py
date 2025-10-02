@@ -1,7 +1,6 @@
 import random
 from collections import namedtuple, deque
 from enum import Enum
-
 import numpy as np
 import pygame
 
@@ -91,7 +90,7 @@ def has_path(grid, start_rc, end_rc):
     return False
 
 class RobotGame:
-    def __init__(self):
+    def __init__(self, rows= 5, cols = 5, block_size = 100):
         # Make window fit the grid 1:1
         self.w = COLS*BLOCK_SIZE
         self.h = ROWS*BLOCK_SIZE
@@ -194,7 +193,7 @@ class RobotGame:
 
         if self.robot == self.goal:
             game_over = True
-            reward = 10
+            reward = 15
             return game_over, reward
 
         # 3.self. update ui
@@ -214,9 +213,3 @@ class RobotGame:
         cx, cy = int(self.robot.x), int(self.robot.y)
         pygame.draw.circle(self.display, (255, 255, 255), (cx, cy), BLOCK_SIZE // 3, 2)
         pygame.display.flip()
-
-    def get_frame(self):
-        surface =pygame.display.get_surface()
-        arr = pygame.surfarray.array3d(surface) # (W,H,3)
-        img =np.transpose(arr,(1,0,2))  # (H,W,3)
-        return img
