@@ -1,12 +1,11 @@
-import random
-from collections import namedtuple, deque
+from collections import namedtuple
 from enum import Enum
 import numpy as np
 import pygame
+from config import EnvCfg, Colors
+from grid_utils import get_random_fields, find_first, manhattan, has_path
 
 pygame.init()
-font = pygame.font.SysFont("arial", 25)
-
 
 class Direction(Enum):
     RIGHT = 1
@@ -15,89 +14,23 @@ class Direction(Enum):
     DOWN = 4
 
 Point = namedtuple('Point', 'x,y')
-BLOCK_SIZE, ROWS, COLS = 100, 5, 5
-
-#colors
-BLACK = (0, 0, 0)
-YELLOW = (255, 255, 0)
-BLUE = (0, 0, 255)
-GREY = (100, 100, 100)
-RED = (255, 0, 0)
-
-# field color/tile type
-COLOR_MAP = {
-    "End": YELLOW,  # goal
-    "Start": BLUE,  # start
-    "Normal": GREY, # rest
-    "Hole": RED,    # hole
-}
-field_counts = {
-    "Normal": 20,
-    "Hole": 3,
-    "Start": 1,
-    "End": 1,
-}
-
-
-def get_random_fields(rows, cols, counts):
-    total = rows * cols
-    if sum(counts.values()) != total:
-        raise ValueError(f"Counts sum to {sum(counts.values())}, but grid needs {total}")
-
-    # build pool
-    pool = []
-    for name, n in counts.items():
-        pool.extend([name] * n)
-
-    random.shuffle(pool)  # shuffle in- place
-    # reshape to rows * cols
-    grid_reshaped = [pool[i*cols:(i+1)*cols] for i in range(rows)]
-    return grid_reshaped
-
-def find_first(grid, value):
-    for r, row in enumerate(grid):
-        for c, cell in enumerate(row):
-            if cell == value:
-                return r, c
-    return None
-
-def manhattan(a,b):
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-def has_path(grid, start_rc, end_rc):
-    """Return True if End is reachable from Start using 4-neighborhood, avoiding 'Hole' tiles."""
-    R, C = len(grid), len(grid[0])
-    sr, sc = start_rc
-    er, ec = end_rc
-    if grid[sr][sc] == "Hole" or grid[er][ec] == "Hole":
-        return False
-
-    q = deque([(sr, sc)])
-    seen = {(sr, sc)}
-    dirs = [(-1,0), (1,0), (0,-1), (0,1)]  # up,down,left,right
-
-    while q:
-        r, c = q.popleft()
-        if (r, c) == (er, ec):
-            return True
-        for dr, dc in dirs:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < R and 0 <= nc < C \
-               and (nr, nc) not in seen \
-               and grid[nr][nc] != "Hole":
-                seen.add((nr, nc))
-                q.append((nr, nc))
-    return False
 
 class RobotGame:
-    def __init__(self, rows= 5, cols = 5, block_size = 100):
-        # Make window fit the grid 1:1
-        self.w = COLS*BLOCK_SIZE
-        self.h = ROWS*BLOCK_SIZE
+    def __init__(self, cfg: EnvCfg = EnvCfg()):
+        self.cfg = cfg
+        self.bs = cfg.block_size
+        self.w = self.cfg.cols * cfg.block_size
+        self.h = self.cfg.rows * cfg.block_size
 
         self.display = pygame.display.set_mode((self.w, self.h))
         pygame.display.set_caption("Robot Game 5x5")
         self.clock = pygame.time.Clock()
+
+        self.direction: Direction = Direction.RIGHT
+        self.grid = None
+        self.robot: Point = Point(0,0)
+        self.goal: Point = Point(0,0)
+
         self.reset()
 
 
@@ -109,7 +42,7 @@ class RobotGame:
         self.goal = None
         start_row = start_col = end_row = end_col = None
         for _ in range(10_000):
-            grid = get_random_fields(ROWS, COLS, field_counts)
+            grid = get_random_fields(self.cfg.rows, self.cfg.cols, self.cfg.field_counts)
             s = find_first(grid, "Start")
             e = find_first(grid, "End")
             if manhattan(s, e) < 4:
@@ -126,12 +59,12 @@ class RobotGame:
             raise RuntimeError("Failed to generate a valid grid after 10,000 tries.")
 
         self.goal = Point(
-            end_col * BLOCK_SIZE + BLOCK_SIZE // 2,
-            end_row * BLOCK_SIZE + BLOCK_SIZE // 2
+            end_col * self.bs + self.bs // 2,
+            end_row * self.bs + self.bs // 2,
         )
         self.robot = Point(
-            start_col * BLOCK_SIZE + BLOCK_SIZE // 2,
-            start_row * BLOCK_SIZE + BLOCK_SIZE // 2
+            start_col * self.bs + self.bs // 2,
+            start_row * self.bs + self.bs // 2,
         )
 
     def is_collision(self, pt = None):
@@ -141,7 +74,7 @@ class RobotGame:
         if pt.x > self.w or pt.x < 0 or pt.y > self.h  or pt.y < 0:
             return True
         # goes in hole
-        if self.grid[pt.y // BLOCK_SIZE][pt.x // BLOCK_SIZE] == "Hole":
+        if self.grid[pt.y // self.bs][pt.x // self.bs] == "Hole":
             return True
         return False
 
@@ -164,13 +97,13 @@ class RobotGame:
         x = self.robot.x
         y = self.robot.y
         if self.direction == Direction.RIGHT:
-            x += BLOCK_SIZE
+            x += self.bs
         elif self.direction == Direction.LEFT:
-            x -= BLOCK_SIZE
+            x -= self.bs
         elif self.direction == Direction.UP:
-            y -= BLOCK_SIZE
+            y -= self.bs
         elif self.direction == Direction.DOWN:
-            y += BLOCK_SIZE
+            y += self.bs
 
         self.robot = Point(x, y)
 
@@ -203,13 +136,13 @@ class RobotGame:
         return game_over, reward
 
     def _update_ui(self):
-        self.display.fill(BLACK)
-        for r in range(ROWS):
-            for c in range(COLS):
-                rect = pygame.Rect(c * BLOCK_SIZE, r * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)
-                pygame.draw.rect(self.display, COLOR_MAP[self.grid[r][c]], rect)
-                pygame.draw.rect(self.display, BLACK, rect, width=2)
+        self.display.fill(Colors.BLACK)
+        for r in range(self.cfg.rows):
+            for c in range(self.cfg.cols):
+                rect = pygame.Rect(c * self.bs, r * self.bs, self.bs, self.bs)
+                pygame.draw.rect(self.display, self.cfg.color_map[self.grid[r][c]], rect)
+                pygame.draw.rect(self.display, Colors.BLACK, rect, width=2)
         # draw robot circle
         cx, cy = int(self.robot.x), int(self.robot.y)
-        pygame.draw.circle(self.display, (255, 255, 255), (cx, cy), BLOCK_SIZE // 3, 2)
+        pygame.draw.circle(self.display, Colors.WHITE, (cx, cy), self.bs // 3, 2)
         pygame.display.flip()
