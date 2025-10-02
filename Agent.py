@@ -5,8 +5,6 @@ import random
 import numpy as np
 from collections import deque
 
-from matplotlib.animation import writers
-
 from game import RobotGame, Direction, Point
 from model import Linear_QNet, QTrainer
 
@@ -183,13 +181,6 @@ def train():
             tb_writer.add_scalar("actions/right", int(agent.action_counts[1]), agent.n_games)
             tb_writer.add_scalar("actions/left", int(agent.action_counts[2]), agent.n_games)
             agent.action_counts[:] = 0  # reset for next episode
-
-            # Screenshot of Map every N Episodes
-            if agent.n_games % IMAGE_EVERY_N_EPISODES == 0:
-                frame = game.get_frame()  # HxWx3, uint8
-                # TensorBoard awaits CHW (C,H,W)
-                img_chw = np.transpose(frame, (2, 0, 1))
-                tb_writer.add_image("env/frame", img_chw, agent.n_games)
 
             # reset Episode Stats
             episode_reward = 0
