@@ -25,6 +25,7 @@ class RobotGame:
         self.display = pygame.display.set_mode((self.w, self.h))
         pygame.display.set_caption("Robot Game 5x5")
         self.clock = pygame.time.Clock()
+        self.fps = 60
 
         self.direction: Direction = Direction.RIGHT
         self.grid = None
@@ -66,6 +67,9 @@ class RobotGame:
             start_col * self.bs + self.bs // 2,
             start_row * self.bs + self.bs // 2,
         )
+        self._update_ui()
+        pygame.display.flip()
+        pygame.time.delay(80)
 
     def is_collision(self, pt = None):
         if pt is None:
@@ -108,44 +112,72 @@ class RobotGame:
         self.robot = Point(x, y)
 
     def play_step(self, action):
-        # 1. collect user input
+        # 1) handle window events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
-        # Position before move
+
+        # pace BEFORE the move so first step after reset isn't a burst
+        self.clock.tick(self.fps)
+
+        # --- positions BEFORE move ---
         robot_pos_before = (self.robot.y // self.bs, self.robot.x // self.bs)
         goal_pos = (self.goal.y // self.bs, self.goal.x // self.bs)
         distance_before = manhattan(robot_pos_before, goal_pos)
 
+        # 2) move (turn + step)
         self._move(action)
 
-        # 2. check if game over
-        reward = 0
-        game_over = False
-        if self.is_collision():
-            game_over = True
-            reward = -10
-            return game_over, reward
+        # 3) terminal checks (so we can render the final frame once)
+        reached_goal = (self.robot == self.goal)
+        out_of_bounds = (self.robot.x <= 0 or self.robot.x >= self.w or
+                         self.robot.y <= 0 or self.robot.y >= self.h)
+        r = self.robot.y // self.bs
+        c = self.robot.x // self.bs
+        in_bounds = (0 <= r < self.cfg.rows and 0 <= c < self.cfg.cols)
+        stepped_in_hole = (in_bounds and self.grid[r][c] == "Hole")
 
-        if self.robot == self.goal:
-            game_over = True
-            reward = 15
-            return game_over, reward
+        if reached_goal or out_of_bounds or stepped_in_hole:
+            # draw last frame so we SEE why it ended
+            self._update_ui()
 
-        # Position after move
+            cx, cy = int(self.robot.x), int(self.robot.y)
+            radius = self.bs // 3
+
+            # only clamp if truly OOB; otherwise keep actual center
+            if out_of_bounds:
+                pad = radius + 2
+                draw_x = min(max(cx, pad), self.w - pad)
+                draw_y = min(max(cy, pad), self.h - pad)
+            else:
+                draw_x, draw_y = cx, cy
+
+            # Fill body, then outline with success/fail color
+            pygame.draw.circle(self.display, Colors.WHITE, (draw_x, draw_y), radius, 0)
+            color = (0, 255, 0) if reached_goal else (255, 0, 0)
+            pygame.draw.circle(self.display, color, (draw_x, draw_y), radius, 6)
+
+            pygame.display.flip()
+            pygame.time.delay(120)
+
+            if reached_goal:
+                return True, 15.0
+            else:
+                return True, -10.0
+
+        # 4) non-terminal: distance shaping
         robot_pos_after = (self.robot.y // self.bs, self.robot.x // self.bs)
         distance_after = manhattan(robot_pos_after, goal_pos)
-
-        # shaping factor
         shaping_factor = 0.2
         reward = shaping_factor * (distance_before - distance_after)
+        # optional tiny living cost to discourage dithering:
+        # reward -= 0.01
 
-        # 3.self. update ui
+        # 5) render & speed
         self._update_ui()
-        self.clock.tick(10)
-        # 4. return game over
-        return game_over, reward
+
+        return False, reward
 
     def _update_ui(self):
         self.display.fill(Colors.BLACK)
@@ -154,11 +186,12 @@ class RobotGame:
                 rect = pygame.Rect(c * self.bs, r * self.bs, self.bs, self.bs)
                 pygame.draw.rect(self.display, self.cfg.color_map[self.grid[r][c]], rect)
                 pygame.draw.rect(self.display, Colors.BLACK, rect, width=2)
-        # draw robot circle
-        cx, cy = int(self.robot.x), int(self.robot.y)
-        r = self.bs // 3
 
-        pygame.draw.circle(self.display, Colors.WHITE, (cx, cy), r, 2)
+        # draw robot body + facing line
+        cx, cy = int(self.robot.x), int(self.robot.y)
+        rad = self.bs // 3
+
+        pygame.draw.circle(self.display, Colors.WHITE, (cx, cy), rad, 2)
 
         line_len = self.bs // 2  # longer arrow
         if self.direction == Direction.RIGHT:
@@ -170,6 +203,5 @@ class RobotGame:
         elif self.direction == Direction.DOWN:
             end = (cx, cy + line_len)
 
-        pygame.draw.line(self.display, (255, 0, 0), (cx, cy), end, 5)  # red, thicker
-
+        pygame.draw.line(self.display, (255, 0, 0), (cx, cy), end, 5)
         pygame.display.flip()
