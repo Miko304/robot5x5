@@ -194,7 +194,7 @@ class RobotGame:
 
         if self.robot == self.goal:
             game_over = True
-            reward = 10
+            reward = 15
             return game_over, reward
 
         # 3.self. update ui

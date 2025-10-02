@@ -20,14 +20,16 @@ class Agent:
     def __init__(self, tb_writer = None):
         self.n_games = 0
         self.epsilon = 0
+        self.eps_start = 1.0
+        self.eps_end = 0.05
+        self.eps_decay = 0.995
         self.gamma = 0.9
         self.memory = deque(maxlen=MAX_MEMORY)
         self.model = Linear_QNet(11,256,3)
         self.trainer = QTrainer(self.model, lr = LR, gamma = self.gamma)
+        self.last_moves = deque(maxlen=4)
         self.tb_writer = tb_writer
-        self.last_100_rewards = deque(maxlen=100)
         self.last_100_success = deque(maxlen=100)
-        self.action_counts = np.zeros(3, dtype=np.int64)  # [straight, right, left]
 
     def get_state(self, game):
         robot = game.robot
@@ -95,22 +97,32 @@ class Agent:
             self.tb_writer.add_scalar("loss/td", loss, self.trainer.train_steps)
 
     def get_action(self, state):
-        self.epsilon = 80 - self.n_games
+        self.epsilon = max(self.eps_end, self.eps_start * (self.eps_decay ** self.n_games))
         final_move = [0,0,0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
             state0 = torch.tensor(state, dtype = torch.float)
-            prediction = self.model(state0)
-            move = torch.argmax(prediction).item()
+            with torch.no_grad():
+                prediction = self.model(state0)
+            q = prediction.cpu().numpy()
+            winners = np.flatnonzero(q >= q.max() - 1e-6)  # near-max indices
+            move = int(np.random.choice(winners))  # pick randomly among ties
             final_move[move] = 1
 
         if self.tb_writer is not None:
             self.tb_writer.add_scalar("hp/epsilon", max(self.epsilon, 0), self.n_games)
 
-        # track which one-hot we chose
-        self.action_counts[np.argmax(final_move)] += 1
+        chosen = np.argmax(final_move)
+        self.last_moves.append(chosen)
+
+        # if last 4 moves were all "right" (index 1) or all "left" (index 2), break the loop once
+        if len(self.last_moves) == self.last_moves.maxlen:
+            if all(m == 1 for m in self.last_moves):  # always turning right
+                final_move = [1, 0, 0]  # go straight once
+            elif all(m == 2 for m in self.last_moves):  # always turning left
+                final_move = [1, 0, 0]  # go straight once
 
         return final_move
 
@@ -131,7 +143,6 @@ def train():
     np.random.seed(42)
     torch.manual_seed(42)
 
-    episode_reward = 0
     episode_steps = 0
 
     while True:
@@ -143,7 +154,7 @@ def train():
 
         # perform move and get new state
         done, reward  = game.play_step(final_move)
-        episode_reward += reward
+
         episode_steps += 1
 
         state_new = agent.get_state(game)
@@ -164,26 +175,16 @@ def train():
             agent.train_long_memory()
 
             # Scalars per Episode
-            agent.last_100_rewards.append(episode_reward)
-            ma100 = np.mean(agent.last_100_rewards)
             agent.last_100_success.append(success)
             sr_ma100 = np.mean(agent.last_100_success) if agent.last_100_success else 0.0
 
-            tb_writer.add_scalar("train/success_rate", success, agent.n_games)  # 0/1
-            tb_writer.add_scalar("train/success_rate_ma100", sr_ma100, agent.n_games)  # 0..1
-            tb_writer.add_scalar("train/mean_reward", episode_reward, agent.n_games)
+            tb_writer.add_scalar("metrics/success", success, agent.n_games)  # 0 or 1
+            tb_writer.add_scalar("metrics/success_ma100", sr_ma100, agent.n_games)  # smoothed line
+
             tb_writer.add_scalar("train/episode_length", episode_steps, agent.n_games)
-            tb_writer.add_scalar("train/success_rate", success, agent.n_games)  # raw success (0/1)
-            tb_writer.add_scalar("train/success_rate_ma100", ma100,
-                              agent.n_games)  # MA100 über Reward; alternativ separaten success-MA führen
             # Log action histogram for the episode
-            tb_writer.add_scalar("actions/straight", int(agent.action_counts[0]), agent.n_games)
-            tb_writer.add_scalar("actions/right", int(agent.action_counts[1]), agent.n_games)
-            tb_writer.add_scalar("actions/left", int(agent.action_counts[2]), agent.n_games)
-            agent.action_counts[:] = 0  # reset for next episode
 
             # reset Episode Stats
-            episode_reward = 0
             episode_steps = 0
 
 
