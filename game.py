@@ -144,5 +144,20 @@ class RobotGame:
                 pygame.draw.rect(self.display, Colors.BLACK, rect, width=2)
         # draw robot circle
         cx, cy = int(self.robot.x), int(self.robot.y)
-        pygame.draw.circle(self.display, Colors.WHITE, (cx, cy), self.bs // 3, 2)
+        r = self.bs // 3
+
+        pygame.draw.circle(self.display, Colors.WHITE, (cx, cy), r, 2)
+
+        line_len = self.bs // 2  # longer arrow
+        if self.direction == Direction.RIGHT:
+            end = (cx + line_len, cy)
+        elif self.direction == Direction.LEFT:
+            end = (cx - line_len, cy)
+        elif self.direction == Direction.UP:
+            end = (cx, cy - line_len)
+        elif self.direction == Direction.DOWN:
+            end = (cx, cy + line_len)
+
+        pygame.draw.line(self.display, (255, 0, 0), (cx, cy), end, 5)  # red, thicker
+
         pygame.display.flip()
