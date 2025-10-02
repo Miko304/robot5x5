@@ -113,6 +113,10 @@ class RobotGame:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
+        # Position before move
+        robot_pos_before = (self.robot.y // self.bs, self.robot.x // self.bs)
+        goal_pos = (self.goal.y // self.bs, self.goal.x // self.bs)
+        distance_before = manhattan(robot_pos_before, goal_pos)
 
         self._move(action)
 
@@ -128,6 +132,14 @@ class RobotGame:
             game_over = True
             reward = 15
             return game_over, reward
+
+        # Position after move
+        robot_pos_after = (self.robot.y // self.bs, self.robot.x // self.bs)
+        distance_after = manhattan(robot_pos_after, goal_pos)
+
+        # shaping factor
+        shaping_factor = 0.2
+        reward = shaping_factor * (distance_before - distance_after)
 
         # 3.self. update ui
         self._update_ui()
