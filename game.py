@@ -1,7 +1,6 @@
 import random
 from collections import namedtuple, deque
 from enum import Enum
-
 import numpy as np
 import pygame
 
@@ -91,7 +90,7 @@ def has_path(grid, start_rc, end_rc):
     return False
 
 class RobotGame:
-    def __init__(self):
+    def __init__(self, rows= 5, cols = 5, block_size = 100):
         # Make window fit the grid 1:1
         self.w = COLS*BLOCK_SIZE
         self.h = ROWS*BLOCK_SIZE
