@@ -11,7 +11,7 @@ class Agent:
         self.hp, self.ex = hp, ex
         self.epsilon = ex.eps_start
         self.memory = ReplayBuffer(hp.max_memory)
-        self.model = Linear_QNet(in_dim, 256, out_dim)
+        self.model = Linear_QNet(in_dim, 128, out_dim)
         self.trainer = QTrainer(self.model, lr = hp.lr, gamma = hp.gamma, tb_writer = (tb_logger.writer if tb_logger else None))
         self.tb = tb_logger
         self.last_moves = deque(maxlen = 4)
