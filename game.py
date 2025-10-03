@@ -25,7 +25,7 @@ class RobotGame:
         self.display = pygame.display.set_mode((self.w, self.h))
         pygame.display.set_caption("Robot Game 5x5")
         self.clock = pygame.time.Clock()
-        self.fps = 60
+        self.fps = 200
 
         self.direction: Direction = Direction.RIGHT
         self.grid = None
@@ -141,7 +141,6 @@ class RobotGame:
         if reached_goal or out_of_bounds or stepped_in_hole:
             # draw last frame so we SEE why it ended
             self._update_ui()
-
             cx, cy = int(self.robot.x), int(self.robot.y)
             radius = self.bs // 3
 
@@ -162,17 +161,17 @@ class RobotGame:
             pygame.time.delay(120)
 
             if reached_goal:
-                return True, 15.0
+                return True, 30.0
             else:
-                return True, -10.0
+                return True, -15.0
 
         # 4) non-terminal: distance shaping
         robot_pos_after = (self.robot.y // self.bs, self.robot.x // self.bs)
         distance_after = manhattan(robot_pos_after, goal_pos)
+
         shaping_factor = 0.2
         reward = shaping_factor * (distance_before - distance_after)
-        # optional tiny living cost to discourage dithering:
-        # reward -= 0.01
+        reward -= 0.01
 
         # 5) render & speed
         self._update_ui()
